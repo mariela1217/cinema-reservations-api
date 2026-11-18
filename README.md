@@ -98,3 +98,39 @@ Guarda cada asiento físico de cada sala. Un asiento se identifica por su sala, 
 **Relaciones**
 
 Cada asiento pertenece a una sala (N:1 con `rooms`). La llave foránea `room_id` usa `ON DELETE RESTRICT`. Un asiento puede aparecer en muchas reservas a lo largo del tiempo a través de `reservation_seats`.
+
+### Tabla `showtimes`
+
+Guarda las funciones: una película, en una sala, a una hora y con un precio. Aquí está la regla que impide que dos funciones se pisen en la misma sala.
+
+| Columna | Tipo (Prisma / PostgreSQL) | Restricciones |
+|---|---|---|
+| `id` | `String` / `UUID` | Llave primaria, generación automática |
+| `movie_id` | `String` / `UUID` | Llave foránea a `movies.id`, `ON DELETE RESTRICT` |
+| `room_id` | `String` / `UUID` | Llave foránea a `rooms.id`, `ON DELETE RESTRICT` |
+| `starts_at` | `DateTime` / `TIMESTAMPTZ` | Obligatorio |
+| `ends_at` | `DateTime` / `TIMESTAMPTZ` | Obligatorio, mayor que `starts_at` |
+| `base_price_cents` | `Int` / `INTEGER` | Obligatorio, mayor que 0 |
+| `status` | `ShowtimeStatus` / enum | `SCHEDULED` o `CANCELLED`, por defecto `SCHEDULED` |
+| `created_at` | `DateTime` / `TIMESTAMPTZ` | Se asigna al crear el registro |
+| `updated_at` | `DateTime` / `TIMESTAMPTZ` | Se actualiza al modificar el registro |
+
+**Por qué lo diseñé así**
+
+- **Guardo `starts_at` y `ends_at`:** con los dos en la misma fila, la base de datos puede comparar dos funciones directamente, sin buscar la duración en `movies` cada vez.
+- **`ends_at` incluye los 20 minutos de limpieza:** lo calcula el servidor (inicio + duración de la película + 20 min) y el cliente nunca lo envía. Así la regla de limpieza queda dentro del dato y la restricción de solapamiento no necesita saber nada de ella. La contrapartida es que si después cambia la duración de una película, las funciones ya creadas conservan su `ends_at` anterior. Lo asumo así.
+- **Restricción de exclusión contra el solapamiento:** uso `EXCLUDE USING gist` con `btree_gist` sobre `room_id` y `tstzrange(starts_at, ends_at)`, solo para funciones `SCHEDULED`. Si dos personas intentan crear funciones solapadas al mismo tiempo, la base de datos rechaza la segunda, y la API convierte ese error en un `409`. Prisma no modela esta restricción, así que la agrego a mano en la migración SQL.
+- **`status` como enum y no un booleano:** una función cancelada tiene significado propio y quise poder distinguirla. Dejé solo `SCHEDULED` y `CANCELLED`; que una función ya terminó se deduce comparando `ends_at` con la hora actual, así que no tengo que guardarlo ni mantenerlo sincronizado.
+- **Las funciones canceladas liberan su horario:** como la restricción de solapamiento solo mira las `SCHEDULED`, se puede programar otra función en esa sala a esa hora.
+- **Precio base en centavos (entero):** evito los errores de redondeo de los decimales. El precio VIP se calcula como `round(base × 130 / 100)`.
+- **`CHECK` de fechas y precio:** `ends_at > starts_at` y `base_price_cents > 0`.
+- **Reglas que valida la API y no la base de datos:** que la función no esté en el pasado y que la película esté activa. Dependen de la hora actual y de otra tabla, así que van en el código.
+- **Índice `(room_id, starts_at)`:** acelera la consulta de funciones por sala y fecha.
+
+**Cancelar una función**
+
+Cancelo la función y, en la misma transacción, todas sus reservas `PENDING` y `CONFIRMED`. Cada reserva pasa a `CANCELLED`, sus asientos quedan libres y se inserta una fila en `reservation_status_history` con el motivo "Función cancelada". Elegí la cascada y no bloquear la cancelación porque un cine sí cancela funciones, y quienes procesen un reembolso necesitan ver que la cancelación fue del cine y no del cliente. La regla de las 2 horas aplica solo cuando cancela el cliente.
+
+**Relaciones**
+
+Una función pertenece a una película y a una sala (N:1). Una función tiene muchas reservas (1:N con `reservations`). La disponibilidad de asientos no se guarda: se calcula a partir de los asientos de la sala y las reservas activas de esa función.
