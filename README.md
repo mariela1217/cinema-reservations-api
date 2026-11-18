@@ -134,3 +134,31 @@ Cancelo la función y, en la misma transacción, todas sus reservas `PENDING` y 
 **Relaciones**
 
 Una función pertenece a una película y a una sala (N:1). Una función tiene muchas reservas (1:N con `reservations`). La disponibilidad de asientos no se guarda: se calcula a partir de los asientos de la sala y las reservas activas de esa función.
+
+### Tabla `reservations`
+
+Guarda cada reserva: para qué función es, quién la hizo, en qué estado está y cuánto cuesta. Los asientos de la reserva van en `reservation_seats`.
+
+| Columna | Tipo (Prisma / PostgreSQL) | Restricciones |
+|---|---|---|
+| `id` | `String` / `UUID` | Llave primaria, generación automática |
+| `showtime_id` | `String` / `UUID` | Llave foránea a `showtimes.id`, `ON DELETE RESTRICT` |
+| `customer_name` | `String` / `VARCHAR(100)` | Obligatorio, no vacío |
+| `customer_email` | `String` / `VARCHAR(254)` | Obligatorio, formato validado por la API |
+| `status` | `ReservationStatus` / enum | `PENDING`, `CONFIRMED`, `CANCELLED`, `EXPIRED`; por defecto `PENDING` |
+| `total_cents` | `Int` / `INTEGER` | Obligatorio, mayor que 0 |
+| `expires_at` | `DateTime?` / `TIMESTAMPTZ` | Solo tiene valor mientras la reserva está `PENDING` |
+| `created_at` | `DateTime` / `TIMESTAMPTZ` | Se asigna al crear el registro |
+| `updated_at` | `DateTime` / `TIMESTAMPTZ` | Se actualiza al modificar el registro |
+
+**Por qué lo diseñé así**
+
+- **Sin tabla de usuarios:** el enunciado no habla de login ni de cuentas, así que guardo solo lo mínimo para identificar al cliente: nombre y correo. Elegí el correo y no el teléfono porque es más fácil de validar y es el dato habitual para confirmar una reserva. Con un solo dato de contacto guardo menos información personal.
+- **`expires_at` es `NULL` fuera de `PENDING`:** una reserva confirmada ya no vence. Lo refuerzo con un `CHECK` para que la base de datos nunca permita una reserva pendiente sin vencimiento ni una confirmada con él. La fecha en que venció una reserva queda en el histórico de estados.
+- **El total lo calcula el servidor:** el cliente nunca lo envía. Se guarda en centavos y en la base de datos solo exijo que sea mayor que 0.
+- **`status` como enum:** la base de datos rechaza cualquier estado fuera de los cuatro. Las transiciones válidas entre estados las controla la API.
+- **Índice `(status, expires_at)`:** lo usa la tarea que expira reservas vencidas, para no recorrer toda la tabla.
+
+**Relaciones**
+
+Una reserva pertenece a una función (N:1 con `showtimes`) con `ON DELETE RESTRICT`. Tiene muchos asientos (1:N con `reservation_seats`) y muchos cambios de estado (1:N con `reservation_status_history`).
