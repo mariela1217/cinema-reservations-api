@@ -71,3 +71,30 @@ Guarda las salas físicas del cine. Cada función se programa en una sala y cada
 **Relaciones**
 
 Una sala tiene muchos asientos (1:N con `seats`) y muchas funciones (1:N con `showtimes`). La llave foránea `room_id` en `showtimes` usa `ON DELETE RESTRICT`, así que no se puede eliminar una sala con funciones asociadas.
+### Tabla `seats`
+
+Guarda cada asiento físico de cada sala. Un asiento se identifica por su sala, la letra de su fila y su número dentro de la fila (por ejemplo, fila C, asiento 7).
+
+| Columna | Tipo (Prisma / PostgreSQL) | Restricciones |
+|---|---|---|
+| `id` | `String` / `UUID` | Llave primaria, generación automática |
+| `room_id` | `String` / `UUID` | Llave foránea a `rooms.id`, `ON DELETE RESTRICT` |
+| `row_label` | `String` / `VARCHAR(5)` | Obligatorio, no vacío |
+| `seat_number` | `Int` / `INTEGER` | Obligatorio, mayor que 0 |
+| `type` | `SeatType` / enum | `REGULAR` o `VIP`, por defecto `REGULAR` |
+| `created_at` | `DateTime` / `TIMESTAMPTZ` | Se asigna al crear el registro |
+| `updated_at` | `DateTime` / `TIMESTAMPTZ` | Se actualiza al modificar el registro |
+
+**Por qué lo diseñé así**
+
+- **`UNIQUE (room_id, row_label, seat_number)`:** sin esta restricción podría existir dos veces el asiento C7 en la misma sala, y una reserva podría apuntar a cualquiera de los dos. La base de datos la hace cumplir aunque alguien inserte datos sin pasar por la API.
+- **Tipo de asiento como enum:** usé un enum (`REGULAR`/`VIP`) y no una tabla aparte de tipos. Para dos valores fijos, una tabla extra implicaba un join más y más endpoints sin aportar nada. La contrapartida es que agregar un tercer tipo requeriría una migración, y lo asumo porque el enunciado solo menciona VIP.
+- **Fila con letra y asiento con número:** separo `row_label` y `seat_number` para poder validar cada parte por separado y ordenar los asientos de forma natural.
+- **`CHECK` en `seat_number` y `row_label`:** rechazo números menores o iguales a 0 y etiquetas vacías o con solo espacios.
+- **Los asientos se generan en el servidor:** al crear una sala, la API recibe la descripción de las filas (letra, cantidad de asientos y tipo) y genera los asientos dentro de la misma transacción que crea la sala. Así evito que el cliente repita o se salte números, y nunca queda una sala creada con sus asientos incompletos.
+- **El tipo se define por fila, no por asiento:** con este formato una fila entera es de un solo tipo. Me pareció suficiente porque en un cine el VIP suele ser por filas, y a cambio el request queda corto y fácil de probar en Swagger.
+- **Límites en la creación:** limito el número de filas y de asientos por fila para evitar peticiones abusivas como `"seats": 1000000`.
+
+**Relaciones**
+
+Cada asiento pertenece a una sala (N:1 con `rooms`). La llave foránea `room_id` usa `ON DELETE RESTRICT`. Un asiento puede aparecer en muchas reservas a lo largo del tiempo a través de `reservation_seats`.
