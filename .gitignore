@@ -3,7 +3,9 @@ dist/
 .env
 .env.*
 !.env.example
+cinema_backup.sql
 
 # Documentos de trabajo que revisaré antes de entregar
 /README.md
 /IMPLEMENTATION_PLAN.md
+/src/generated/prisma
