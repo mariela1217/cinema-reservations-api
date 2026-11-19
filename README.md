@@ -24,7 +24,7 @@ Busqué herramientas que me permitan concentrarme en lo más importante de la pr
 
 ## Diseño de la base de datos
 
-Todas las tablas usan UUID como llave primaria y llevan `created_at` y `updated_at`. Los nombres de tablas y columnas están en inglés y en snake_case.
+Todas las tablas usan UUID como llave primaria. Salvo reservation_status_history, que solo recibe inserciones, todas llevan created_at y updated_at. Los nombres de tablas y columnas están en inglés y en snake_case.
 
 ### Tabla `movies`
 
@@ -71,6 +71,7 @@ Guarda las salas físicas del cine. Cada función se programa en una sala y cada
 **Relaciones**
 
 Una sala tiene muchos asientos (1:N con `seats`) y muchas funciones (1:N con `showtimes`). La llave foránea `room_id` en `showtimes` usa `ON DELETE RESTRICT`, así que no se puede eliminar una sala con funciones asociadas.
+
 ### Tabla `seats`
 
 Guarda cada asiento físico de cada sala. Un asiento se identifica por su sala, la letra de su fila y su número dentro de la fila (por ejemplo, fila C, asiento 7).
@@ -162,3 +163,68 @@ Guarda cada reserva: para qué función es, quién la hizo, en qué estado está
 **Relaciones**
 
 Una reserva pertenece a una función (N:1 con `showtimes`) con `ON DELETE RESTRICT`. Tiene muchos asientos (1:N con `reservation_seats`) y muchos cambios de estado (1:N con `reservation_status_history`).
+
+### Tabla `reservation_seats`
+
+Une cada reserva con los asientos que incluye. Una reserva tiene de 1 a 6 asientos, y un mismo asiento aparece en muchas reservas a lo largo del tiempo (una por función), por eso es una tabla intermedia.
+
+| Columna | Tipo (Prisma / PostgreSQL) | Restricciones |
+|---|---|---|
+| `id` | `String` / `UUID` | Llave primaria, generación automática |
+| `reservation_id` | `String` / `UUID` | Llave foránea a `reservations.id`, `ON DELETE RESTRICT` |
+| `seat_id` | `String` / `UUID` | Llave foránea a `seats.id`, `ON DELETE RESTRICT` |
+| `showtime_id` | `String` / `UUID` | Llave foránea a `showtimes.id`, `ON DELETE RESTRICT` |
+| `price_cents` | `Int` / `INTEGER` | Obligatorio, mayor que 0 |
+| `is_active` | `Boolean` / `BOOLEAN` | Obligatorio, por defecto `true` |
+| `created_at` | `DateTime` / `TIMESTAMPTZ` | Se asigna al crear el registro |
+| `updated_at` | `DateTime` / `TIMESTAMPTZ` | Se actualiza al modificar el registro |
+
+**Por qué lo diseñé así**
+
+- **Índice único parcial `(showtime_id, seat_id) WHERE is_active`:** es la regla que impide reservar el mismo asiento dos veces para la misma función, incluso si dos clientes lo piden al mismo tiempo. Si dos transacciones intentan insertar la misma pareja, la base de datos acepta una y rechaza la otra, y la API convierte ese error en un `409`. Lo resuelvo en la base de datos y no con una consulta previa en el código, porque entre "revisar si está libre" y "guardar" hay un hueco de tiempo en el que otra petición puede colarse.
+- **`showtime_id` repetido a propósito:** la reserva ya guarda su función, pero un índice único solo puede comparar columnas de su propia tabla. Para decir "este asiento, en esta función, una sola vez" necesito las dos columnas en la misma fila, por eso repito `showtime_id` en `reservation_seats`. Es una desnormalización. El valor lo toma el backend de la reserva dentro de la misma transacción que crea los asientos, el cliente nunca lo envía y no se modifica después. No agregué una llave foránea compuesta `(reservation_id, showtime_id)` que lo garantice en la base de datos, porque complicaba el modelo de Prisma y prefería no arriesgar las migraciones. La coincidencia queda cubierta por el código y por pruebas.
+- **`is_active` en lugar de borrar la fila:** al cancelar o expirar una reserva, sus asientos pasan a `is_active = false` dentro de la misma transacción que cambia el estado de la reserva y escribe el histórico. Lo mismo ocurre cuando se cancela una función. El índice único parcial ignora las filas inactivas, así que el asiento queda libre, pero conservo qué asientos y a qué precio tenía la reserva.
+- **`price_cents` por asiento:** guardo en centavos lo que se cobró por cada asiento, para no trabajar con decimales. El VIP cuesta 30 % más que el precio base y lo calculo como `round(base × 130 / 100)` por asiento. El total de la reserva lo calcula el servidor y es la suma de estos importes.
+- **`UNIQUE (reservation_id, seat_id)`:** una misma reserva no puede incluir dos veces el mismo asiento.
+
+**Restricción en SQL**
+
+Prisma no modela índices parciales, así que lo agrego a mano en la migración:
+
+​```sql
+CREATE UNIQUE INDEX reservation_seats_active_unique
+  ON reservation_seats (showtime_id, seat_id)
+  WHERE is_active;
+​```
+
+**Relaciones**
+
+Cada fila pertenece a una reserva, a un asiento y a una función (N:1 con `reservations`, `seats` y `showtimes`), todas con `ON DELETE RESTRICT`.
+
+### Tabla `reservation_status_history`
+
+Registra cada cambio de estado de una reserva. Sirve para saber qué le pasó a una reserva, cuándo y por qué, por ejemplo si hay que atender un reembolso.
+
+| Columna | Tipo (Prisma / PostgreSQL) | Restricciones |
+|---|---|---|
+| `id` | `String` / `UUID` | Llave primaria, generación automática |
+| `reservation_id` | `String` / `UUID` | Llave foránea a `reservations.id`, `ON DELETE RESTRICT` |
+| `from_status` | `ReservationStatus?` / enum | Opcional, `NULL` solo en el primer registro de la reserva |
+| `to_status` | `ReservationStatus` / enum | Obligatorio |
+| `reason` | `String?` / `VARCHAR(200)` | Opcional, texto libre |
+| `changed_at` | `DateTime` / `TIMESTAMPTZ` | Se asigna al insertar el registro |
+
+**Por qué lo diseñé así**
+
+- **`from_status` y `to_status`:** guardo el estado anterior y el nuevo, no solo el nuevo, para que cada fila se entienda sin mirar las demás. Una reserva recién creada no tiene estado anterior, por eso `from_status` puede ser `NULL` en ese primer registro.
+- **`reason` como texto libre de hasta 200 caracteres:** lo preferí sobre un enum de motivos porque es más simple y me deja distinguir casos como "cancelada por el cliente", "función cancelada" o "expirada por falta de confirmación". La contrapartida es que un error de escritura no lo detecta la base de datos.
+- **No guardo el nombre ni el correo del cliente:** ya están en `reservations`, y como cada cambio apunta a su reserva, se obtienen con un join. Copiarlos aquí repetiría datos personales y podrían quedar desactualizados.
+- **Sin `created_at` ni `updated_at`:** la tabla solo recibe inserciones y una fila nunca se modifica, así que `changed_at` cumple el papel de `created_at` y un `updated_at` no tendría sentido.
+- **Se escribe en la misma transacción que el cambio de estado:** si el cambio falla, no queda histórico de algo que no pasó, y si el histórico falla, no queda un cambio sin registrar. Esto incluye la expiración automática y la cancelación en cascada de una función.
+- **`CHECK (from_status IS DISTINCT FROM to_status)`:** evita registrar un cambio de un estado a sí mismo.
+- **Índice `(reservation_id, changed_at)`:** lo usa la consulta del histórico de una reserva, ordenado por fecha.
+- **Solo se inserta desde la API:** no hay endpoints que modifiquen o borren filas del histórico. No agregué un trigger que lo impida en la base de datos, porque el enunciado no lo pide y prefería no sumar SQL adicional. Si alguien tuviera acceso directo a la base de datos podría alterarlo, y lo dejo como una limitación conocida.
+
+**Relaciones**
+
+Cada fila pertenece a una reserva (N:1 con `reservations`) con `ON DELETE RESTRICT`.
