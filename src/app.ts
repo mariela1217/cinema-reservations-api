@@ -2,13 +2,13 @@ import "dotenv/config";
 import express from "express";
 import {prisma} from "./lib/prisma";
 import { createMovieSchema } from "./schemas/movie.schema";
-//import { setupSwagger } from "./docs/swagger";
+import { setupSwagger } from "./docs/swagger";
 
 const app = express();
 
 
 app.use(express.json());
-//setupSwagger(app);
+setupSwagger(app);
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
