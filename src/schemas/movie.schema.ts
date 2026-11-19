@@ -10,3 +10,10 @@ export const createMovieSchema = z.object({
     .int("La duración debe ser un número entero")
     .positive("La duración debe ser mayor que cero")
 }).strict();
+
+export const updateMovieSchema = createMovieSchema.partial().refine(
+  (data) => Object.keys(data).length > 0,
+  {
+    message: "Debes proporcionar al menos un campo para actualizar",
+  }
+);
