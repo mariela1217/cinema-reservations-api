@@ -5,6 +5,7 @@ import {
 import { createMovieSchema, updateMovieSchema } from "../schemas/movie.schema";
 import { z } from "zod";
 import { createRoomSchema } from "../schemas/room.schema";
+import { createShowtimeSchema } from "../schemas/showtime.schema";
 
 export const registry = new OpenAPIRegistry();
 
@@ -178,6 +179,122 @@ registry.registerPath({
     },
   },
 });
+
+registry.registerPath({
+  method: "get",
+  path: "/rooms/{id}",
+  tags: ["Rooms"],
+  summary: "Consultar una sala y sus asientos",
+  description:
+    "Devuelve la información de una sala y todos sus asientos, ordenados por fila y número.",
+  request: {
+    params: z.object({
+      id: z.uuid(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Sala encontrada con sus asientos",
+    },
+    400: {
+      description: "El ID tiene un formato inválido",
+    },
+    404: {
+      description: "Sala no encontrada",
+    },
+    500: {
+      description: "Error interno del servidor",
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/showtimes",
+  tags: ["Showtimes"],
+  summary: "Programar una función de cine",
+  description:
+    "Programa una película activa en una sala. " +
+    "El servidor calcula la hora de finalización incluyendo " +
+    "20 minutos de limpieza. No se permiten horarios empalmados.",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: createShowtimeSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Función creada correctamente",
+    },
+    400: {
+      description: "Datos inválidos o fecha de inicio en el pasado",
+    },
+    404: {
+      description: "Película o sala no encontrada",
+    },
+    409: {
+      description: "Película inactiva o conflicto de horarios en la sala",
+    },
+    500: {
+      description: "Error interno del servidor",
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/showtimes",
+  tags: ["Showtimes"],
+  summary: "Consultar funciones de cine",
+  description:
+    "Devuelve todas las funciones registradas, incluyendo " +
+    "la información de sus películas y salas, ordenadas por fecha de inicio.",
+  responses: {
+    200: {
+      description: "Listado de funciones obtenido correctamente",
+    },
+    500: {
+      description: "Error interno del servidor",
+    },
+  },
+});
+
+
+registry.registerPath({
+  method: "get",
+  path: "/showtimes/{id}/seats",
+  tags: ["Showtimes"],
+  summary: "Consultar disponibilidad de asientos",
+  description:
+    "Devuelve los asientos de la sala correspondiente a una función " +
+    "e indica si cada uno está disponible. " +
+    "Un asiento ocupado por una reservación activa no está disponible.",
+  request: {
+    params: z.object({
+      id: z.uuid(),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Disponibilidad de asientos obtenida correctamente",
+    },
+    400: {
+      description: "El ID tiene un formato inválido",
+    },
+    404: {
+      description: "Función no encontrada",
+    },
+    500: {
+      description: "Error interno del servidor",
+    },
+  },
+});
+
 
 export function generateOpenAPIDocument() {
   const generator = new OpenApiGeneratorV3(registry.definitions);
