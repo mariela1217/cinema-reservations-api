@@ -1,4 +1,3 @@
-import "dotenv/config";
 import express from "express";
 import {prisma} from "./lib/prisma";
 import { createMovieSchema, updateMovieSchema} from "./schemas/movie.schema";
@@ -21,8 +20,6 @@ app.get("/health", (_req, res) => {
     message: "Cinema Booking API is running"
   });
 });
-
-const PORT = 3000;
 
 app.get("/movies", async (_req, res) => {
   try {
@@ -703,21 +700,6 @@ app.post("/reservations", async (req, res) => {
   }
 });
 
-// Revisa reservaciones vencidas cada 30 segundos.
-setInterval(async () => {
-  try {
-    const expiredCount = await expirePendingReservations();
-
-    if (expiredCount > 0) {
-      console.log(
-        `Se expiraron ${expiredCount} reservaciones pendientes`
-      );
-    }
-  } catch (error) {
-    console.error("Error al expirar reservaciones:", error);
-  }
-}, 30_000);
-
 app.patch("/reservations/:id/confirm", async (req, res) => {
   const idValidation = z.uuid().safeParse(req.params.id);
 
@@ -961,6 +943,4 @@ app.get("/reservations/:id", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+export { app };

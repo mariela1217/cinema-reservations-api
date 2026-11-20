@@ -2,8 +2,13 @@
   "name": "cinema-reservations-api",
   "version": "1.0.0",
   "description": "API REST de reservas para un cine, desarrollada con Node.js y TypeScript.",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -20,6 +25,7 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^9.1.0",
     "@prisma/client": "^6.19.3",
+    "dotenv": "^16.6.1",
     "express": "^5.3.0",
     "swagger-ui-express": "^5.0.1",
     "zod": "^4.6.7"
