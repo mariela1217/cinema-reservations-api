@@ -17,12 +17,13 @@ describe("Salud, documentación y errores globales", () => {
     expect(res.text).toContain("Swagger UI");
   });
 
-  it("GET /api-docs.json publica OpenAPI 3.0 con las 12 rutas", async () => {
+  it("GET /api-docs.json publica OpenAPI 3.0 con las 13 rutas", async () => {
     const res = await api().get("/api-docs.json");
     expect(res.status).toBe(200);
     expect(res.body.openapi).toBe("3.0.0");
     expect(Object.keys(res.body.paths).sort()).toEqual(
       [
+        "/health",
         "/movies",
         "/movies/{id}",
         "/movies/{id}/deactivate",
