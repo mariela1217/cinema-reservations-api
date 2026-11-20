@@ -36,6 +36,13 @@ describe("seatPriceCents", () => {
     expect(Number.isSafeInteger(INT4_MAX * 130)).toBe(true);
   });
 
+  it("con el precio base máximo permitido, 6 asientos VIP caben en INTEGER", () => {
+    const vip = seatPriceCents(10_000_000, "VIP");
+    expect(vip).toBe(13_000_000);
+    expect(totalCents(Array(6).fill(vip))).toBe(78_000_000);
+    expect(78_000_000).toBeLessThanOrEqual(INT4_MAX);
+  });
+
   it("siempre devuelve enteros", () => {
     for (let base = 1; base <= 2_000; base++) {
       expect(Number.isInteger(seatPriceCents(base, "VIP"))).toBe(true);

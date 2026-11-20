@@ -16,8 +16,11 @@ export const createShowtimeSchema = z.object({
   base_price_cents: z.number()
     .int("El precio debe ser un número entero")
     .positive("El precio debe ser mayor que cero")
+    .max(10_000_000, "El precio no puede superar 10000000 centavos")
     .meta({
-      description: "Precio base por asiento REGULAR, en centavos (entero > 0). El VIP se calcula en el servidor: base × 1,3, redondeado.",
+      description:
+        "Precio base por asiento REGULAR, en centavos (entero de 1 a 10 000 000). El VIP se calcula en el servidor: base × 1,3, redondeado. " +
+        "El máximo garantiza que el precio VIP y el total de 6 asientos quepan en las columnas enteras.",
       example: 10000,
     }),
 }).strict().meta({

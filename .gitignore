@@ -6,6 +6,5 @@ dist/
 !.env.test.example
 cinema_backup.sql
 
-# Documentos de trabajo que revisaré antes de entregar
-/README.md
+# Documento de trabajo personal (no forma parte de la entrega)
 /IMPLEMENTATION_PLAN.md

@@ -10,7 +10,9 @@ export const createReservationSchema = z.object({
     .max(150, "El nombre no puede superar 150 caracteres")
     .meta({ description: "Nombre del cliente (1 a 150 caracteres, se recortan espacios).", example: "Ana Pérez" }),
 
-  customer_email: z.email().meta({ description: "Correo electrónico del cliente.", example: "ana.perez@example.com" }),
+  customer_email: z.email()
+    .max(254, "El correo no puede superar 254 caracteres")
+    .meta({ description: "Correo electrónico del cliente (hasta 254 caracteres).", example: "ana.perez@example.com" }),
 
   seat_ids: z.array(z.uuid())
     .min(1, "Debes seleccionar al menos un asiento")

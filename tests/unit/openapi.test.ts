@@ -147,6 +147,14 @@ describe("Estructura del documento", () => {
     expect(s.RoomRowRequest.properties.seats).toMatchObject({ minimum: 1, maximum: 50 });
     expect(s.CreateShowtimeRequest.properties.starts_at.format).toBe("date-time");
   });
+
+  it("publica los límites máximos de duración, precio y correo", () => {
+    const s = doc.components.schemas;
+    expect(s.CreateMovieRequest.properties.duration_minutes).toMatchObject({ type: "integer", maximum: 1440 });
+    expect(s.UpdateMovieRequest.properties.duration_minutes).toMatchObject({ type: "integer", maximum: 1440 });
+    expect(s.CreateShowtimeRequest.properties.base_price_cents).toMatchObject({ type: "integer", maximum: 10_000_000 });
+    expect(s.CreateReservationRequest.properties.customer_email).toMatchObject({ format: "email", maxLength: 254 });
+  });
 });
 
 describe("Ejemplos", () => {

@@ -11,8 +11,10 @@ export const createMovieSchema = z.object({
   duration_minutes: z.number()
     .int("La duración debe ser un número entero")
     .positive("La duración debe ser mayor que cero")
+    .max(1440, "La duración no puede superar 1440 minutos")
     .meta({
-      description: "Duración en minutos (entero mayor que 0). Junto con 20 min de limpieza define cuánto ocupa la sala cada función.",
+      description:
+        "Duración en minutos (entero de 1 a 1440, es decir, hasta 24 h). Junto con 20 min de limpieza define cuánto ocupa la sala cada función.",
       example: 166,
     }),
 }).strict().meta({
