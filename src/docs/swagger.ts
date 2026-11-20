@@ -10,4 +10,9 @@ export function setupSwagger(app: Express) {
     swaggerUi.serve,
     swaggerUi.setup(document)
   );
+  
+  app.get("/api-docs.json", (_req, res) => {
+    res.json(generateOpenAPIDocument());
+});
+  
 }
