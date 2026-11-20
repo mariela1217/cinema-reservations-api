@@ -9,7 +9,10 @@ import { createRoomSchema } from "./schemas/room.schema";
 import { createShowtimeSchema } from "./schemas/showtime.schema";
 import { createReservationSchema } from "./schemas/reservation.schema";
 import { expirePendingReservations } from "./services/reservation-expiration.service";
-import { isShowtimeOpen, lockShowtimeForShare } from "./services/showtime-lock";
+import { lockShowtimeForShare } from "./services/showtime-lock";
+import { seatPriceCents, totalCents } from "./domain/pricing";
+import { calculateShowtimeEnd, isShowtimeOpen } from "./domain/showtime-rules";
+import { calculateExpiration, isWithinCancellationWindow } from "./domain/reservation-rules";
 
 const app = express();
 
@@ -336,8 +339,7 @@ app.post("/showtimes", async (req, res) => {
     }
 
     // La sala estará ocupada durante la película y 20 minutos de limpieza.
-    const totalMinutes = movie.duration_minutes + 20;
-    const endDate = new Date(startDate.getTime() + totalMinutes * 60_000);
+    const endDate = calculateShowtimeEnd(startDate, movie.duration_minutes);
 
     const showtime = await prisma.showtime.create({
       data: {
@@ -641,18 +643,12 @@ app.post("/reservations", async (req, res) => {
     // El servidor calcula el precio; nunca confía en un total enviado.
     const pricedSeats = seats.map((seat) => ({
       seat_id: seat.id,
-      price_cents:
-        seat.type === "VIP"
-          ? Math.round(showtime.base_price_cents * 1.3)
-          : showtime.base_price_cents,
+      price_cents: seatPriceCents(showtime.base_price_cents, seat.type),
     }));
 
-    const total_cents = pricedSeats.reduce(
-      (total, seat) => total + seat.price_cents,
-      0
-    );
+    const total_cents = totalCents(pricedSeats.map((seat) => seat.price_cents));
 
-    const expires_at = new Date(Date.now() + 10 * 60 * 1000);
+    const expires_at = calculateExpiration();
 
     const reservation = await prisma.$transaction(async (tx) => {
       // Revalida la función con bloqueo: una cancelación concurrente
@@ -869,13 +865,12 @@ app.patch("/reservations/:id/cancel", async (req, res) => {
       });
     }
 
-    const twoHoursBefore = new Date(
-      existing.showtime.starts_at.getTime() - 2 * 60 * 60 * 1000
-    );
-
     // Una reservación confirmada solo puede cancelarse hasta 2 horas antes.
     // starts_at no cambia después de crear la función, así que puede revisarse aquí.
-    if (existing.status === "CONFIRMED" && new Date() > twoHoursBefore) {
+    if (
+      existing.status === "CONFIRMED" &&
+      !isWithinCancellationWindow(existing.showtime.starts_at)
+    ) {
       return res.status(409).json({
         message:
           "La reservación cambió de estado, expiró o está fuera del plazo de cancelación",

@@ -9,7 +9,12 @@
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "postinstall": "prisma generate",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run --root .",
+    "test:unit": "vitest run --root . --project unit",
+    "test:integration": "vitest run --root . --project integration",
+    "test:concurrency": "vitest run --root . --project concurrency",
+    "test:db:prepare": "tsx tests/scripts/prepare-test-db.ts"
   },
   "repository": {
     "type": "git",
@@ -33,9 +38,13 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",
+    "@types/supertest": "7.2.1",
     "@types/swagger-ui-express": "^4.1.8",
     "prisma": "^6.19.3",
+    "supertest": "7.3.1",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
   }
 }

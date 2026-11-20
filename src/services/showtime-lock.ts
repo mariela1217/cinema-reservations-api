@@ -23,8 +23,3 @@ export async function lockShowtimeForShare(
 
   return rows[0] ?? null;
 }
-
-// Una función acepta reservaciones y confirmaciones solo si está programada y no ha comenzado.
-export function isShowtimeOpen(showtime: LockedShowtime, now: Date = new Date()): boolean {
-  return showtime.status === "SCHEDULED" && showtime.starts_at > now;
-}

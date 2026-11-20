@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.test.example
 cinema_backup.sql
 
 # Documentos de trabajo que revisaré antes de entregar
