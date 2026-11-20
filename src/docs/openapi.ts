@@ -178,7 +178,7 @@ registry.registerPath({
                 },
             },
         },
-        400: validationErrorResponse("Datos inválidos"),
+        400: badRequestResponse("Datos inválidos o JSON malformado"),
         500: errorResponse("Error interno del servidor"),
     },
 });
@@ -209,7 +209,8 @@ registry.registerPath({
                 },
             },
         },
-        400: validationErrorResponse("Datos inválidos"),
+        400: badRequestResponse("Datos inválidos o JSON malformado"),
+        409: errorResponse("Ya existe una sala con ese nombre"),
         500: errorResponse("Error interno del servidor"),
     },
 });

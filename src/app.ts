@@ -1,5 +1,7 @@
 import express from "express";
+import { Prisma } from "@prisma/client";
 import {prisma} from "./lib/prisma";
+import { errorHandler, notFoundHandler } from "./middlewares/error-handler";
 import { createMovieSchema, updateMovieSchema} from "./schemas/movie.schema";
 import { setupSwagger } from "./docs/swagger";
 import { z } from "zod";
@@ -9,6 +11,8 @@ import { createReservationSchema } from "./schemas/reservation.schema";
 import { expirePendingReservations } from "./services/reservation-expiration.service";
 
 const app = express();
+
+app.disable("x-powered-by");
 
 
 app.use(express.json());
@@ -224,6 +228,18 @@ app.post("/rooms", async (req, res) => {
     return res.status(201).json(room);
   } catch (error) {
     console.error("Error al crear sala:", error);
+
+    // El índice único rooms_name_key impide nombres de sala repetidos.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      Array.isArray(error.meta?.target) &&
+      error.meta.target.includes("name")
+    ) {
+      return res.status(409).json({
+        message: "Ya existe una sala con ese nombre",
+      });
+    }
 
     return res.status(500).json({
       message: "Error interno del servidor",
@@ -942,5 +958,9 @@ app.get("/reservations/:id", async (req, res) => {
     });
   }
 });
+
+// Deben registrarse después de todas las rutas.
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 export { app };
