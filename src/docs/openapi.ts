@@ -427,7 +427,8 @@ registry.registerPath({
     tags: ["Reservations"],
     summary: "Confirmar una reservación pendiente",
     description:
-        "Confirma una reservación PENDING siempre que no haya vencido. " +
+        "Confirma una reservación PENDING siempre que no haya vencido " +
+        "y que su función siga programada y no haya comenzado. " +
         "Los asientos permanecen ocupados.",
     request: {
         params: z.object({
@@ -445,7 +446,7 @@ registry.registerPath({
         },
         400: errorResponse("ID inválido"),
         404: errorResponse("Reservación no encontrada"),
-        409: errorResponse("La reservación ya expiró o no está pendiente"),
+        409: errorResponse("La reservación ya expiró o no está pendiente, o la función ya comenzó o fue cancelada"),
         500: errorResponse("Error interno del servidor"),
     },
 });

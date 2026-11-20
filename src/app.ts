@@ -9,6 +9,7 @@ import { createRoomSchema } from "./schemas/room.schema";
 import { createShowtimeSchema } from "./schemas/showtime.schema";
 import { createReservationSchema } from "./schemas/reservation.schema";
 import { expirePendingReservations } from "./services/reservation-expiration.service";
+import { isShowtimeOpen, lockShowtimeForShare } from "./services/showtime-lock";
 
 const app = express();
 
@@ -505,27 +506,36 @@ app.patch("/showtimes/:id/cancel", async (req, res) => {
         return null;
       }
 
-      const reservations = await tx.reservation.findMany({
-        where: {
-          showtime_id: showtimeId,
-          status: {
-            in: ["PENDING", "CONFIRMED"],
-          },
-        },
-        select: {
-          id: true,
-          status: true,
-        },
-      });
+      // Bloquea y lee el estado vigente de las reservaciones activas.
+      // Las PENDING ya vencidas se dejan a la expiración, que registra PAYMENT_TIMEOUT.
+      const now = new Date();
+      const reservations = await tx.$queryRaw<
+        { id: string; status: "PENDING" | "CONFIRMED" }[]
+      >`
+        SELECT id, status::text AS status
+        FROM reservations
+        WHERE showtime_id = ${showtimeId}::uuid
+          AND (status = 'CONFIRMED' OR (status = 'PENDING' AND expires_at > ${now}))
+        ORDER BY id
+        FOR UPDATE
+      `;
+
+      let cancelledReservations = 0;
 
       for (const reservation of reservations) {
-        await tx.reservation.update({
-          where: { id: reservation.id },
+        const updatedReservation = await tx.reservation.updateMany({
+          where: { id: reservation.id, status: reservation.status },
           data: {
             status: "CANCELLED",
             expires_at: null,
           },
         });
+
+        if (updatedReservation.count === 0) {
+          continue;
+        }
+
+        cancelledReservations++;
 
         await tx.reservationSeat.updateMany({
           where: {
@@ -551,7 +561,7 @@ app.patch("/showtimes/:id/cancel", async (req, res) => {
         showtime: await tx.showtime.findUniqueOrThrow({
           where: { id: showtimeId },
         }),
-        cancelled_reservations: reservations.length,
+        cancelled_reservations: cancelledReservations,
       };
     });
 
@@ -645,6 +655,14 @@ app.post("/reservations", async (req, res) => {
     const expires_at = new Date(Date.now() + 10 * 60 * 1000);
 
     const reservation = await prisma.$transaction(async (tx) => {
+      // Revalida la función con bloqueo: una cancelación concurrente
+      // debe esperar a esta transacción o esta debe ver la función cancelada.
+      const lockedShowtime = await lockShowtimeForShare(tx, showtime_id);
+
+      if (!lockedShowtime || !isShowtimeOpen(lockedShowtime)) {
+        return null;
+      }
+
       const newReservation = await tx.reservation.create({
         data: {
           showtime_id,
@@ -683,6 +701,12 @@ app.post("/reservations", async (req, res) => {
         },
       });
     });
+
+    if (!reservation) {
+      return res.status(409).json({
+        message: "La función ya comenzó o no está disponible",
+      });
+    }
 
     return res.status(201).json(reservation);
   } catch (error) {
@@ -741,6 +765,16 @@ app.patch("/reservations/:id/confirm", async (req, res) => {
     }
 
     const confirmedReservation = await prisma.$transaction(async (tx) => {
+      // No se confirma sobre una función cancelada o ya iniciada.
+      const lockedShowtime = await lockShowtimeForShare(
+        tx,
+        existingReservation.showtime_id
+      );
+
+      if (!lockedShowtime || !isShowtimeOpen(lockedShowtime)) {
+        return "SHOWTIME_UNAVAILABLE" as const;
+      }
+
       const result = await tx.reservation.updateMany({
         where: {
           id: reservationId,
@@ -780,6 +814,12 @@ app.patch("/reservations/:id/confirm", async (req, res) => {
         },
       });
     });
+
+    if (confirmedReservation === "SHOWTIME_UNAVAILABLE") {
+      return res.status(409).json({
+        message: "La función ya comenzó o fue cancelada",
+      });
+    }
 
     if (!confirmedReservation) {
       return res.status(409).json({
@@ -833,22 +873,26 @@ app.patch("/reservations/:id/cancel", async (req, res) => {
       existing.showtime.starts_at.getTime() - 2 * 60 * 60 * 1000
     );
 
+    // Una reservación confirmada solo puede cancelarse hasta 2 horas antes.
+    // starts_at no cambia después de crear la función, así que puede revisarse aquí.
+    if (existing.status === "CONFIRMED" && new Date() > twoHoursBefore) {
+      return res.status(409).json({
+        message:
+          "La reservación cambió de estado, expiró o está fuera del plazo de cancelación",
+      });
+    }
+
     const cancelled = await prisma.$transaction(async (tx) => {
       // La condición evita cancelar una reservación
       // cuyo estado haya cambiado mientras procesábamos.
+      // Solo usa columnas de la propia fila para que PostgreSQL la reevalúe al bloquearla.
       const result = await tx.reservation.updateMany({
         where: {
           id: reservationId,
           status: existing.status,
           ...(existing.status === "PENDING"
             ? { expires_at: { gt: new Date() } }
-            : {
-                showtime: {
-                  starts_at: {
-                    gte: new Date(Date.now() + 2 * 60 * 60 * 1000),
-                  },
-                },
-              }),
+            : {}),
         },
         data: {
           status: "CANCELLED",
